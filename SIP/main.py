@@ -16,6 +16,12 @@ import time
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
+    logging.basicConfig(format='%(asctime)s:%(message)s', filename='logy.log', level=logging.INFO,
+                        datefmt='%H:%M:%S')
+    logging.info(time.strftime("%a, %d %b %Y %H:%M:%S ", time.localtime()))
+    hostname = socket.gethostname()
+
+
     sipfullproxy.ipaddress = "147.175.186.16"
     print(sipfullproxy.ipaddress)
     sipfullproxy.recordroute = "Record-Route: <sip:%s:%d;lr>" % (sipfullproxy.ipaddress, sipfullproxy.PORT)
