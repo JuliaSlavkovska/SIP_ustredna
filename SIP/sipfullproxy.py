@@ -16,10 +16,6 @@
 
 import socketserver
 import re
-import string
-import socket
-# import threading
-import sys
 import logging
 import time
 
@@ -72,6 +68,8 @@ topvia = ""
 registrar = {}
 ipaddress = ""
 spojenie = False
+nadvazovanie = False
+
 
 def hexdump(chars, sep, width):
     while chars:
@@ -179,6 +177,26 @@ class UDPHandler(socketserver.BaseRequestHandler):
                 md = rx_uri.search(line)
                 if md:
                     source = "%s@%s" % (md.group(1), md.group(2))
+                break
+        return source
+
+    def getDestinationName(self):
+        destination = ""
+        for line in self.data:
+            if rx_to.search(line) or rx_cto.search(line):
+                md = rx_uri.search(line)
+                if md:
+                    destination = "%s" % md.group(1)
+                break
+        return destination
+
+    def getSourceName(self):
+        source = ""
+        for line in self.data:
+            if rx_from.search(line) or rx_cfrom.search(line):
+                md = rx_uri.search(line)
+                if md:
+                    source = "%s" % md.group(1)
                 break
         return source
 
@@ -317,7 +335,7 @@ class UDPHandler(socketserver.BaseRequestHandler):
                 showtime()
                 #logging.info("<<< %s" % data[0])
                 logging.debug("---\n<< server send [%d]:\n%s\n---" % (len(text), text))
-                logging.info("Pokus o spojenie %s -> %s" % (self.getSource(), self.getDestination()))
+                #logging.info("Pokus o spojenie %s -> %s" % (self.getSource(), self.getDestination()))
                 spojenie = True
             else:
                 self.sendResponse("480 Temporarily Unavailable")
@@ -345,9 +363,9 @@ class UDPHandler(socketserver.BaseRequestHandler):
                 showtime()
                 #logging.info("<<< %s" % data[0])
                 logging.debug("---\n<< server send [%d]:\n%s\n---" % (len(text), text))
-                if (spojenie):
+                #if (spojenie):
 
-                    logging.info("Spojenie nadviazané %s -> %s" % (self.getSource(), self.getDestination()))
+                    #logging.info("Spojenie nadviazané %s -> %s" % (self.getSource(), self.getDestination()))
 
 
     def processNonInvite(self):
@@ -376,11 +394,11 @@ class UDPHandler(socketserver.BaseRequestHandler):
                 showtime()
                 #logging.info("<<< %s" % data[0])
                 logging.debug("---\n<< server send [%d]:\n%s\n---" % (len(text), text))
-                logging.info("Spojenie bolo ukončené %s -> %s" % (self.getSource(), self.getDestination()))
+                #logging.info("Spojenie bolo ukončené %s -> %s" % (self.getSource(), self.getDestination()))
                 spojenie = False
             else:
                 self.sendResponse("406 Not Acceptable")
-                logging.info("Spojenie nebolo nadviazané2 %s -> %s" % (self.getSource(), self.getDestination()))
+                #logging.info("Spojenie nebolo nadviazané2 %s -> %s" % (self.getSource(), self.getDestination()))
 
         else:
             self.sendResponse("500 Server Internal Error")
@@ -438,6 +456,38 @@ class UDPHandler(socketserver.BaseRequestHandler):
                 logging.error("request_uri %s" % request_uri)
                 # print "message %s unknown" % self.data
 
+    def zaloguj(self, request_uri):
+        global nadvazovanie
+        print("**** ", request_uri, " ****")
+
+        request = request_uri[0:3]
+        #print(request)
+
+        if request == "SIP":
+            status = request_uri[8:11]
+            #print(status)
+            if status == "180":
+                logging.info("Vytáčanie - RINGING %s -> %s" % (self.getSourceName(), self.getDestinationName()))
+                nadvazovanie = True
+            elif status == "200":
+                if nadvazovanie:
+                    logging.info("Spojenie nadviazané - OK")
+                    nadvazovanie = False
+            elif status == "603":
+                logging.info("Spojenie odmietnuté - DECLINE %s -> %s\n" % (self.getDestinationName(), self.getSourceName()))
+                nadvazovanie = False
+            elif status == "486":
+                logging.info("Spojenie nenadviazané - BUSY %s -> %s\n" % (self.getDestinationName(), self.getSourceName()))
+                nadvazovanie = False
+
+        elif request == "BYE":
+            logging.info("Spojenie bolo ukončené - BYE %s -> %s\n" % (self.getSourceName(), self.getDestinationName()))
+            nadvazovanie = False
+        elif request == "CAN":
+            logging.info("Nadväzovanie zrušené - CANCEL %s -> %s \n" % (self.getSourceName(), self.getDestinationName()))
+            nadvazovanie = False
+        return
+
     def handle(self):
         # socket.setdefaulttimeout(120)
         data = self.request[0].decode("utf-8")
@@ -445,10 +495,8 @@ class UDPHandler(socketserver.BaseRequestHandler):
         self.socket = self.request[1]
         request_uri = self.data[0]
         if rx_request_uri.search(request_uri) or rx_code.search(request_uri):
+            self.zaloguj(request_uri)
             showtime()
-            #logging.info(">>> %s" % request_uri)
-            logging.debug("---\n>> server received [%d]:\n%s\n---" % (len(data), data))
-            logging.debug("Received from %s:%d" % self.client_address)
             self.processRequest()
         else:
             if len(data) > 4:
@@ -456,22 +504,4 @@ class UDPHandler(socketserver.BaseRequestHandler):
                 logging.warning("---\n>> server received [%d]:" % len(data))
                 hexdump(data, ' ', 16)
                 logging.warning("---")
-
-
-if __name__ == "__main__":
-    logging.basicConfig(format='%(asctime)s:%(levelname)s:%(message)s', filename='proxy.log', level=logging.INFO,
-                        datefmt='%H:%M:%S')
-    logging.info(time.strftime("%a, %d %b %Y %H:%M:%S ", time.localtime()))
-    hostname = socket.gethostname()
-    logging.info(hostname)
-    ipaddress = "147.175.186.16"
-
-    print(ipaddress)
-    if ipaddress == "127.0.0.1":
-        ipaddress = sys.argv[1]
-    logging.info(ipaddress)
-    recordroute = "Record-Route: <sip:%s:%d;lr>" % (ipaddress, PORT)
-    topvia = "Via: SIP/2.0/UDP %s:%d" % (ipaddress, PORT)
-    server = socketserver.UDPServer((HOST, PORT), UDPHandler)
-    server.serve_forever()
 
